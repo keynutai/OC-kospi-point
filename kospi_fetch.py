@@ -156,126 +156,126 @@ def save_to_html(df, output_path, last_2025_date, last_2025):
       position: relative;
       overflow: hidden;
     }
-    
+
     /* Light theme styles */
     body.light-theme {
       background: #f6f8fa;
       color: #24292f;
     }
-    
+
     body.light-theme .header-card {
       background: linear-gradient(135deg, #ffffff 0%, #f6f8fa 100%);
       border: 1px solid #d1d5da;
     }
-    
+
     body.light-theme .stat-card {
       background: #ffffff;
       border: 1px solid #d1d5da;
     }
-    
+
     body.light-theme .table-wrapper {
       background: #ffffff;
       border: 1px solid #d1d5da;
     }
-    
+
     body.light-theme .header-card h1 {
       color: #0969da;
     }
-    
+
     body.light-theme .meta-grid {
       color: #656d76;
     }
-    
+
     body.light-theme .meta-grid strong {
       color: #24292f;
     }
-    
+
     body.light-theme .stat-card.high .stat-value {
       color: #cf222e;
     }
-    
+
     body.light-theme .stat-card.low .stat-value {
       color: #0969da;
     }
-    
+
     body.light-theme .stat-card.avg .stat-value {
       color: #24292f;
     }
-    
+
     body.light-theme .stat-card.last .stat-value {
       color: #24292f;
     }
-    
+
     body.light-theme .sort-buttons {
       background: #ffffff;
       border: 1px solid #d1d5da;
     }
-    
+
     body.light-theme .sort-btn {
       color: #656d76;
     }
-    
+
     body.light-theme .sort-btn:hover {
       color: #24292f;
     }
-    
+
     body.light-theme .sort-btn.active {
       background: #0969da;
       color: #ffffff;
     }
-    
+
     body.light-theme .table-wrapper {
       background: #ffffff;
       border: 1px solid #d1d5da;
     }
-    
+
     body.light-theme thead th {
       background: #f6f8fa;
       color: #656d76;
     }
-    
+
     body.light-theme tbody tr:hover:not(.month-sep) {
       background: #f6f8fa;
     }
-    
+
     body.light-theme tbody tr {
       border-top: 1px solid #d1d5da;
     }
-    
+
     body.light-theme tr.month-sep td {
       background: #f6f8fa;
       color: #24292f;
       border-top: 2px solid #d1d5da;
     }
-    
+
     body.light-theme tr.month-sep {
       border-top: 1px solid #a8adb0;
     }
-    
+
     body.light-theme td.date {
       color: #656d76;
     }
-    
+
     body.light-theme td.close {
       color: #24292f;
     }
-    
+
     body.light-theme .up {
       color: #cf222e;
     }
-    
+
     body.light-theme .down {
       color: #0969da;
     }
-    
+
     body.light-theme .flat {
       color: #656d76;
     }
-    
+
     body.light-theme .footer {
       color: #8c949d;
     }
-    
+
     body.light-theme .stat-card:hover {
       border-color: #0969da;
     }
@@ -524,10 +524,10 @@ def save_to_html(df, output_path, last_2025_date, last_2025):
   function toggleTheme() {
     const body = document.body;
     const themeButton = document.getElementById('themeToggle');
-    
+
     // Toggle the theme class
     body.classList.toggle('light-theme');
-    
+
     // Save preference to localStorage
     if (body.classList.contains('light-theme')) {
       localStorage.setItem('theme', 'light');
@@ -610,7 +610,7 @@ def main():
     df = pd.concat([prev_row, df])
     df["Pct_Change"] = df["Close"].pct_change() * 100
     df["Point_Change"] = df["Close"].diff()
-    df = df.iloc[1:]  # 임시 행 제거
+    df = df.iloc[1:].dropna()
 
     base = os.path.dirname(os.path.abspath(__file__))
 
