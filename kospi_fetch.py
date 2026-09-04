@@ -1,17 +1,17 @@
 """
 코스피 지수 일별 마감가 수집 프로그램
 - 기간: 2026년 1월 1일 ~ 오늘
-- 데이터 소스: Yahoo Finance (^KS11)
+- 데이터 소스: FinanceDataReader (KS11)
 - 저장 형식: 텍스트 파일 (kospi_closing_prices.txt)
             + HTML 파일 (kospi_closing_prices.html, index.html)
 """
 
-import yfinance as yf
+import FinanceDataReader as fdr
 from datetime import date, datetime, timedelta
 import os
 
 # ── 설정 ────────────────────────────────────────────────────
-TICKER           = "^KS11"
+TICKER           = "KS11"
 START_DATE       = "2026-01-01"
 END_DATE         = (date.today() + timedelta(days=1)).strftime("%Y-%m-%d")
 OUTPUT_FILE      = "kospi_closing_prices.txt"
@@ -21,9 +21,9 @@ OUTPUT_FILE_INDEX= "index.html"                 # GitHub Pages 기본 인덱스 
 
 
 def fetch_kospi_data(ticker, start, end):
-    """야후 파이낸스에서 코스피 일별 데이터를 가져옵니다."""
+    """FinanceDataReader에서 코스피 일별 데이터를 가져옵니다."""
     print(f"📡 코스피 데이터 다운로드 중... ({start} ~ {end})")
-    df = yf.download(ticker, start=start, end=end, progress=False, auto_adjust=True)
+    df = fdr.DataReader(ticker, start=start, end=end)
     if df.empty:
         raise ValueError("데이터를 가져오지 못했습니다. 인터넷 연결 및 날짜 범위를 확인하세요.")
     return df
@@ -496,7 +496,7 @@ def save_to_html(df, output_path, last_2025_date, last_2025):
   </div>
 
   <div class="footer">
-    데이터 출처: Yahoo Finance (^KS11) &nbsp;·&nbsp; 자동 생성됨
+    데이터 출처: FinanceDataReader &nbsp;·&nbsp; 자동 생성됨
   </div>
 
 </div>
