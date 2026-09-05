@@ -48,7 +48,7 @@ def save_to_file(df, output_path):
 
         current_month = None
         for idx, row in df.iterrows():
-            date_str  = idx.strftime("%Y-%m-%d")
+            date_str  = idx.strftime("%Y-%m-%d") + f" ({['월', '화', '수', '목', '금', '토', '일'][idx.weekday()]})"
             month_key = (idx.year, idx.month)
             if month_key != current_month:
                 if current_month is not None:
@@ -90,7 +90,7 @@ def save_to_html(df, output_path, last_2025_date, last_2025):
                 )
                 current_month = month_key
 
-            date_str  = idx.strftime("%Y-%m-%d")
+            date_str  = idx.strftime("%Y-%m-%d") + f" ({['월', '화', '수', '목', '금', '토', '일'][idx.weekday()]})"
             close_val = float(row["Close"])
             pct       = row["Pct_Change"]
             point     = row["Point_Change"]
@@ -590,8 +590,10 @@ def main():
     prev_col = df_prev["Close"]
     if isinstance(prev_col, pd.DataFrame):
         prev_col = prev_col.iloc[:, 0]
-    last_2025      = float(prev_col.iloc[-1])
-    last_2025_date = prev_col.index[-1].strftime("%Y-%m-%d")
+    
+    last_2025 = float(prev_col.iloc[-1])
+    last_2025_raw = prev_col.index[-1].strftime("%Y-%m-%d")
+    last_2025_date = last_2025_raw + f" ({['월', '화', '수', '목', '금', '토', '일'][prev_col.index[-1].weekday()]})"
     print(f"   └ 2025년 마지막 거래일: {last_2025_date}  종가: {last_2025:,.2f} pt")
 
     # 본 데이터 수집 (2026-01-01 ~ 오늘)
@@ -605,7 +607,7 @@ def main():
     # 2025년 마지막 거래일을 임시로 앞에 붙여 첫 행 전일대비 계산
     prev_row = pd.DataFrame(
         {"Close": [last_2025]},
-        index=pd.DatetimeIndex([last_2025_date])
+        index=pd.DatetimeIndex([prev_col.index[-1]])
     )
     df = pd.concat([prev_row, df])
     df["Pct_Change"] = df["Close"].pct_change() * 100
@@ -627,7 +629,7 @@ def main():
     print(f"   최고가 : {close_series.max():,.2f} pt")
     print(f"   최저가 : {close_series.min():,.2f} pt")
     print(f"   평  균 : {close_series.mean():,.2f} pt")
-    print(f"   최근가 : {close_series.iloc[-1]:,.2f} pt  ({df.index[-1].strftime('%Y-%m-%d')})")
+    print(f"   최근가 : {close_series.iloc[-1]:,.2f} pt  ({df.index[-1].strftime('%Y-%m-%d')} ({['월', '화', '수', '목', '금', '토', '일'][df.index[-1].weekday()]}))")
 
 
 if __name__ == "__main__":
