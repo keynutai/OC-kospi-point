@@ -6,7 +6,19 @@
             + HTML 파일 (kospi_closing_prices.html, index.html)
 """
 
-import FinanceDataReader as fdr
+try:
+    import FinanceDataReader as fdr
+except Exception as e:
+    fdr = None
+    print(f"⚠️ FinanceDataReader import failed: {e}")
+
+try:
+    import yfinance as yf
+except Exception as e:
+    yf = None
+    print(f"⚠️ yfinance import failed: {e}")
+
+import pandas as pd
 from datetime import date, datetime, timedelta
 import os
 
@@ -20,13 +32,97 @@ OUTPUT_FILE_INDEX= "index.html"                 # GitHub Pages 기본 인덱스 
 # ────────────────────────────────────────────────────────────
 
 
-def fetch_kospi_data(ticker, start, end):
+def fetch_kospi_data_fdr(ticker, start, end):
     """FinanceDataReader에서 코스피 일별 데이터를 가져옵니다."""
-    print(f"📡 코스피 데이터 다운로드 중... ({start} ~ {end})")
+    print(f"📡 FinanceDataReader에서 코스피 데이터 다운로드 중... ({start} ~ {end})")
+    if fdr is None:
+        raise RuntimeError("FinanceDataReader 라이브러리가 설치되어 있지 않습니다.")
     df = fdr.DataReader(ticker, start=start, end=end)
     if df.empty:
-        raise ValueError("데이터를 가져오지 못했습니다. 인터넷 연결 및 날짜 범위를 확인하세요.")
+        return pd.DataFrame()
+    
+    # 열 이름 표준화
+    df = df.rename(columns={'Close': 'Close', 'Open': 'Open', 'High': 'High', 'Low': 'Low', 'Volume': 'Volume'})
     return df
+
+def fetch_kospi_data_yf(ticker, start, end):
+    """yfinance에서 코스피 일별 데이터를 가져옵니다."""
+    print(f"📡 yfinance에서 코스피 데이터 다운로드 중... ({start} ~ {end})")
+    if yf is None:
+        raise RuntimeError("yfinance 라이브러리가 설치되어 있지 않습니다.")
+    
+    symbol = f"^{ticker}" if not ticker.startswith('^') else ticker
+    df = yf.download(symbol, start=start, end=end, progress=False)
+    
+    if df.empty:
+        return pd.DataFrame()
+    
+    # yfinance의 MultiIndex 또는 다양한 열 이름을 표준화
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = df.columns.get_level_values(0)
+        
+    df = df.rename(columns={
+        'Open': 'Open',
+        'High': 'High', 
+        'Low': 'Low',
+        'Close': 'Close',
+        'Volume': 'Volume'
+    })
+    # yfinance는 가끔 Date가 인덱스이거나 컬럼이므로 확실히 정렬
+    df.index = pd.to_datetime(df.index)
+    # Close 컬럼만 있으면 되므로 필수 컬럼 확인 후 반환 (Close 필수)
+    if 'Close' not in df.columns:
+        raise ValueError("yfinance 데이터에 Close 컬럼이 없습니다.")
+    return df
+
+def fetch_and_compare_data(ticker, start, end):
+    """FinanceDataReader와 yfinance에서 데이터를 가져와서 비교하고 더 최신 데이터를 선택합니다."""
+    print("📡 두 데이터 소스에서 데이터를 가져오는 중...")
+    
+    if fdr is None and yf is None:
+        raise RuntimeError("데이터를 가져올 수 있는 라이브러리(FinanceDataReader, yfinance)가 모두 없습니다.")
+    
+    df_fdr = None
+    df_yf = None
+    
+    if fdr is not None:
+        try:
+            df_fdr = fetch_kospi_data_fdr(ticker, start, end)
+        except Exception as e:
+            print(f"⚠️ FinanceDataReader 수집 중 오류 발생: {e}")
+            
+    if yf is not None:
+        try:
+            df_yf = fetch_kospi_data_yf(ticker, start, end)
+        except Exception as e:
+            print(f"⚠️ yfinance 수집 중 오류 발생: {e}")
+            
+    # 날짜 기준 비교 (정렬 후 마지막 날짜 확인)
+    if df_fdr is not None and not df_fdr.empty:
+        df_fdr = df_fdr.sort_index()
+    if df_yf is not None and not df_yf.empty:
+        df_yf = df_yf.sort_index()
+    last_date_fdr = df_fdr.index[-1] if df_fdr is not None and not df_fdr.empty else None
+    last_date_yf = df_yf.index[-1] if df_yf is not None and not df_yf.empty else None
+    
+    print(f"   FinanceDataReader 마지막 날짜: {last_date_fdr}")
+    print(f"   yfinance 마지막 날짜: {last_date_yf}")
+    
+    if last_date_fdr and last_date_yf:
+        if last_date_fdr >= last_date_yf:
+            print("   📈 FinanceDataReader 데이터가 더 최신이거나 같습니다. 선택합니다.")
+            return df_fdr
+        else:
+            print("   📈 yfinance 데이터가 더 최신입니다. 선택합니다.")
+            return df_yf
+    elif last_date_fdr:
+        print("   📈 FinanceDataReader 데이터가 유일합니다. 선택합니다.")
+        return df_fdr
+    elif last_date_yf:
+        print("   📈 yfinance 데이터가 유일합니다. 선택합니다.")
+        return df_yf
+    else:
+        raise ValueError("두 데이터 소스 모두에서 데이터를 가져올 수 없습니다.")
 
 
 # ──────────────────────────────────────────────────────────────
@@ -586,7 +682,7 @@ def main():
 
     # 2025년 마지막 거래일 마감가 조회 (첫날 전일대비 계산용)
     print("📡 2025년 마지막 거래일 데이터 조회 중...")
-    df_prev  = fetch_kospi_data(TICKER, "2025-12-01", "2025-12-31")
+    df_prev  = fetch_and_compare_data(TICKER, "2025-12-01", "2025-12-31")
     prev_col = df_prev["Close"]
     if isinstance(prev_col, pd.DataFrame):
         prev_col = prev_col.iloc[:, 0]
@@ -597,7 +693,7 @@ def main():
     print(f"   └ 2025년 마지막 거래일: {last_2025_date}  종가: {last_2025:,.2f} pt")
 
     # 본 데이터 수집 (2026-01-01 ~ 오늘)
-    df = fetch_kospi_data(TICKER, START_DATE, END_DATE)
+    df = fetch_and_compare_data(TICKER, START_DATE, END_DATE)
 
     close_col = df["Close"]
     if isinstance(close_col, pd.DataFrame):
@@ -633,4 +729,7 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as e:
+        print(f"❌ {e}")

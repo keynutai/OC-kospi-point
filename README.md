@@ -2,7 +2,7 @@
 
 > **OpenCode와 함께 바이브코딩 첫 경험하기** 🚀
 
-대한민국 코스피(^KS11) 지수의 일별 마감가를 수집하여 **텍스트 파일(.txt)** 및 **시각화된 HTML 파일(.html)**로 저장해 주는 Python 프로그램입니다.
+대한민국 코스피(^KS11) 지수의 일별 마감가를 **FinanceDataReader(KS11)와 yfinance(^KS11) 두 소스에서 동시 수집·비교**하여 더 최신 데이터를 선택해 **텍스트 파일(.txt)** 및 **시각화된 HTML 파일(.html)**로 저장해 주는 Python 프로그램입니다.
 
 🌐 **웹 페이지 링크**: [https://keynutai.github.io/OC-kospi-point/](https://keynutai.github.io/OC-kospi-point/)
 
@@ -10,7 +10,7 @@
 
 ## 🌟 주요 기능
 
-- **FinanceDataReader** 기반의 실시간/과거 데이터 자동 수집
+- **FinanceDataReader(KS11) + yfinance(^KS11) 이중 소스 기반** 실시간/과거 데이터 자동 수집 — 두 소스에서 동시 다운로드 후 `index[-1]`(마지막 거래일자) 비교로 더 최신 쪽 자동 선택
 - 2026년 1월 1일부터 오늘 날짜까지의 코스피 일별 마감가 수집
 - **2025년 마지막 거래일 종가 기준** 첫 거래일(2026-01-02 (금)) 전일대비 등락률 정확히 계산
 - **전일 대비 등락 표시** — **등락 (pt)** / **등락 (%)** 2개의 별도 컬럼으로 분리:
@@ -51,7 +51,7 @@ cd OC-kospi-point
 ```bash
 python3 -m venv kospi_venv
 source kospi_venv/bin/activate
-pip install finance-datareader
+pip install finance-datareader yfinance pandas
 ```
 
 #### 3. 스크립트 실행
@@ -63,6 +63,14 @@ python kospi_fetch.py
 ---
 
 ## 🔄 작업 내역 (Changelog)
+
+### 2026-09-10 (목) · 데이터 소스 이중화 (FinanceDataReader + yfinance 비교 선택)
+
+FinanceDataReader의 최신 데이터 지연 문제를 보완하기 위해 `yfinance`를 재도입하고, 두 소스에서 모두 데이터를 받아온 뒤 비교해 더 최신 데이터가 많은 쪽을 선택하도록 로직을 개선했습니다.
+
+- `kospi_fetch.py`: `KS11`(FinanceDataReader)과 `^KS11`(yfinance) 이중 수집 → `fetch_kospi_data_fdr` / `fetch_kospi_data_yf` / `fetch_and_compare_data`로 분리, 마지막 거래일자(`index[-1]`) 비교로 최신 데이터 자동 선택
+- `kospi_fetch.py`: yfinance 티커 자동 변환(`KS11` → `^KS11`), MultiIndex 컬럼 평탄화(`get_level_values(0)`), `Close` 필수 확인 및 `sort_index()` 후 비교 등 오류 전반 수정
+- 가상환경에 `yfinance` 재설치 및 `pandas` 의존성 명시
 
 ### 2026-09-06 (일) · 날짜 출력 형식 변경 (요일 추가)
 
