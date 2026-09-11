@@ -1,7 +1,7 @@
 """
 코스피 지수 일별 마감가 수집 프로그램
 - 기간: 2026년 1월 1일 ~ 오늘
-- 데이터 소스: FinanceDataReader (KS11)
+- 데이터 소스: FinanceDataReader (KS11) + yfinance (^KS11) 이중 수집 후 유효 데이터 기준 최신 선택
 - 저장 형식: 텍스트 파일 (kospi_closing_prices.txt)
             + HTML 파일 (kospi_closing_prices.html, index.html)
 """
@@ -25,7 +25,8 @@ import os
 # ── 설정 ────────────────────────────────────────────────────
 TICKER           = "KS11"
 START_DATE       = "2026-01-01"
-END_DATE         = (date.today() + timedelta(days=1)).strftime("%Y-%m-%d")
+END_DATE         = date.today().strftime("%Y-%m-%d")                          # 화면 표시/저장용 (오늘까지)
+END_DATE_YF      = (date.today() + timedelta(days=1)).strftime("%Y-%m-%d")    # yfinance는 end 미포함이라 +1일
 OUTPUT_FILE      = "kospi_closing_prices.txt"
 OUTPUT_FILE_HTML = "kospi_closing_prices.html"
 OUTPUT_FILE_INDEX= "index.html"                 # GitHub Pages 기본 인덱스 파일
@@ -33,7 +34,7 @@ OUTPUT_FILE_INDEX= "index.html"                 # GitHub Pages 기본 인덱스 
 
 
 def fetch_kospi_data_fdr(ticker, start, end):
-    """FinanceDataReader에서 코스피 일별 데이터를 가져옵니다."""
+    """FinanceDataReader에서 코스피 일별 데이터를 가져옵니다. (NaN 마감가 행 자동 제외)"""
     print(f"📡 FinanceDataReader에서 코스피 데이터 다운로드 중... ({start} ~ {end})")
     if fdr is None:
         raise RuntimeError("FinanceDataReader 라이브러리가 설치되어 있지 않습니다.")
@@ -43,10 +44,20 @@ def fetch_kospi_data_fdr(ticker, start, end):
     
     # 열 이름 표준화
     df = df.rename(columns={'Close': 'Close', 'Open': 'Open', 'High': 'High', 'Low': 'Low', 'Volume': 'Volume'})
+    # 자정 직후 등 공급사 지연으로 생기는 NaN/0 placeholder 제거
+    if 'Close' in df.columns:
+        df['Close'] = pd.to_numeric(df['Close'], errors='coerce')
+        before = len(df)
+        df = df.dropna(subset=['Close'])
+        df = df[df['Close'] != 0]
+        if len(df) != before:
+            print(f"   ↳ FDR NaN/0 행 {before - len(df)}건 제외")
+    df.index = pd.to_datetime(df.index)
+    df = df.sort_index()
     return df
 
 def fetch_kospi_data_yf(ticker, start, end):
-    """yfinance에서 코스피 일별 데이터를 가져옵니다."""
+    """yfinance에서 코스피 일별 데이터를 가져옵니다. (NaN 마감가 행 자동 제외)"""
     print(f"📡 yfinance에서 코스피 데이터 다운로드 중... ({start} ~ {end})")
     if yf is None:
         raise RuntimeError("yfinance 라이브러리가 설치되어 있지 않습니다.")
@@ -73,37 +84,58 @@ def fetch_kospi_data_yf(ticker, start, end):
     # Close 컬럼만 있으면 되므로 필수 컬럼 확인 후 반환 (Close 필수)
     if 'Close' not in df.columns:
         raise ValueError("yfinance 데이터에 Close 컬럼이 없습니다.")
+    # 자정 직후 등 공급사 지연으로 생기는 NaN/0 placeholder 제거
+    df['Close'] = pd.to_numeric(df['Close'], errors='coerce')
+    before = len(df)
+    df = df.dropna(subset=['Close'])
+    df = df[df['Close'] != 0]
+    if len(df) != before:
+        print(f"   ↳ yfinance NaN/0 행 {before - len(df)}건 제외")
+    df = df.sort_index()
     return df
 
 def fetch_and_compare_data(ticker, start, end):
-    """FinanceDataReader와 yfinance에서 데이터를 가져와서 비교하고 더 최신 데이터를 선택합니다."""
+    """FinanceDataReader와 yfinance에서 데이터를 가져와서 비교하고 더 최신(유효) 데이터를 선택합니다."""
     print("📡 두 데이터 소스에서 데이터를 가져오는 중...")
     
     if fdr is None and yf is None:
         raise RuntimeError("데이터를 가져올 수 있는 라이브러리(FinanceDataReader, yfinance)가 모두 없습니다.")
+    
+    # yfinance는 end 미포함이므로 +1일 보정, FDR은 end 포함이라 그대로
+    try:
+        end_dt = datetime.strptime(end, "%Y-%m-%d").date()
+        end_yf = (end_dt + timedelta(days=1)).strftime("%Y-%m-%d")
+    except Exception:
+        end_yf = end
+    end_fdr = end
     
     df_fdr = None
     df_yf = None
     
     if fdr is not None:
         try:
-            df_fdr = fetch_kospi_data_fdr(ticker, start, end)
+            df_fdr = fetch_kospi_data_fdr(ticker, start, end_fdr)
         except Exception as e:
             print(f"⚠️ FinanceDataReader 수집 중 오류 발생: {e}")
             
     if yf is not None:
         try:
-            df_yf = fetch_kospi_data_yf(ticker, start, end)
+            df_yf = fetch_kospi_data_yf(ticker, start, end_yf)
         except Exception as e:
             print(f"⚠️ yfinance 수집 중 오류 발생: {e}")
             
-    # 날짜 기준 비교 (정렬 후 마지막 날짜 확인)
-    if df_fdr is not None and not df_fdr.empty:
-        df_fdr = df_fdr.sort_index()
-    if df_yf is not None and not df_yf.empty:
-        df_yf = df_yf.sort_index()
-    last_date_fdr = df_fdr.index[-1] if df_fdr is not None and not df_fdr.empty else None
-    last_date_yf = df_yf.index[-1] if df_yf is not None and not df_yf.empty else None
+    # 유효 데이터(Close NaN/0 제외) 기준 마지막 날짜 비교 - 자정 placeholder 무시
+    def _last_valid(df):
+        if df is None or df.empty:
+            return None
+        # 이미 fetch_*에서 NaN/0 제거됐지만 방어적으로 재필터
+        valid = df.dropna(subset=['Close'])
+        valid = valid[pd.to_numeric(valid['Close'], errors='coerce').notna()]
+        valid = valid[valid['Close'] != 0]
+        return valid.index[-1] if not valid.empty else None
+
+    last_date_fdr = _last_valid(df_fdr)
+    last_date_yf = _last_valid(df_yf)
     
     print(f"   FinanceDataReader 마지막 날짜: {last_date_fdr}")
     print(f"   yfinance 마지막 날짜: {last_date_yf}")
@@ -592,7 +624,7 @@ def save_to_html(df, output_path, last_2025_date, last_2025):
   </div>
 
   <div class="footer">
-    데이터 출처: FinanceDataReader &nbsp;·&nbsp; 자동 생성됨
+    데이터 출처: FinanceDataReader / yfinance &nbsp;·&nbsp; 자동 생성됨
   </div>
 
 </div>
@@ -708,7 +740,14 @@ def main():
     df = pd.concat([prev_row, df])
     df["Pct_Change"] = df["Close"].pct_change() * 100
     df["Point_Change"] = df["Close"].diff()
-    df = df.iloc[1:].dropna()
+    df = df.iloc[1:]
+    # 자정 placeholder 등으로 Close가 NaN/0인 행이 생기면 제거하되, 정상 등락 계산은 유지
+    before = len(df)
+    df = df.dropna(subset=["Close"])
+    df = df[pd.to_numeric(df["Close"], errors="coerce").notna()]
+    df = df[df["Close"] != 0]
+    if len(df) != before:
+        print(f"   ↳ 최종 NaN/0 행 {before - len(df)}건 제외 (자정 직후 미갱신 데이터)")
 
     base = os.path.dirname(os.path.abspath(__file__))
 
