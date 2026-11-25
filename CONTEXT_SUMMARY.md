@@ -20,8 +20,9 @@
 - **운영 원칙**: `AGENTS.md` 기준 한국어 사용, 코딩 후 테스트/커밋·푸시는 사용자 확인 후 진행
 
 ## 3. 파일 구성
-- `kospi_fetch.py`: 메인 수집/가공/저장 로직 (735→767줄)
-- `kospi_closing_prices.txt` / `kospi_closing_prices.html` / `index.html`: 생성 결과물
+- `kospi_fetch.py`: 메인 수집/가공/저장 로직 (SQLite 누적 DB + 증분 갱신)
+- `kospi_data.db`: 누적 저장용 SQLite 데이터베이스 (gitignore)
+- `index.html`: 생성 결과물 (DB 기반, GitHub Pages용)
 - `run_kospi.command`: Finder 더블클릭 실행기
 - `kospi_venv/`: 가상환경 (finance-datareader 0.9.202, yfinance 1.7.0, pandas 3.0.5)
 - `README.md`: 기능/실행법/Changelog 문서
@@ -32,8 +33,9 @@
 - `fetch_kospi_data_fdr(ticker,start,end)`: `fdr.DataReader` → `Close` 수치화 → `dropna(subset=["Close"])` & `!=0` → `sort_index()`
 - `fetch_kospi_data_yf(ticker,start,end)`: `yf.download("^"+ticker)` → MultiIndex 평탄화 → 동일 NaN/0 필터 → `sort_index()`
 - `fetch_and_compare_data(ticker,start,end)`: `end_fdr=end`, `end_yf=end+1`로 각각 호출 → `_last_valid()` 비교 → 최신 유효 df 반환
-- `main()`: 2025 마지막 거래일 조회 → 본 데이터 조회 → `Close`만 추출 → `prev_row` concat → `Pct_Change`/`Point_Change` 계산 → `iloc[1:]` + `dropna(subset=["Close"])` → `save_to_file`/`save_to_html`×2 + 콘솔 통계
-- `save_to_file`/`save_to_html`: 월별 구분, 요일 포함, 등락 컬럼 분리, 정렬용 `rowsAsc`/`rowsDesc` 생성
+- `main()`: DB 마지막 거래일 확인 → 그 일주일 전~오늘만 수집 → upsert DB → DB 전체 로드 → `prev_row` concat → `Pct_Change`/`Point_Change` 계산 → `index.html` 생성 + 콘솔 통계
+- `load_db`/`upsert_db`/`get_last_db_date`: SQLite 누적 저장 및 증분 갱신
+- `save_to_html`: 월별 구분, 요일 포함, 등락 컬럼 분리, 정렬용 `rowsAsc`/`rowsDesc` 생성 (index.html만)
 
 ## 5. 작업 내역 (Changelog)
 - **2026-09-10 (목) 데이터 소스 이중화**: FDR+yfinance 비교 선택, 티커 자동변환, MultiIndex 평탄화, `sort_index` 추가 (커밋 `b427429`)
@@ -68,6 +70,6 @@ python kospi_fetch.py
 - `README.md`는 `b427429`에 이중화 내용 반영 완료, 자정 수정 내용은 미반영
 
 ## 9. 다음 단계 (선택)
-- 자정 수정 커밋/푸시 및 `README.md` Changelog에 2026-09-10 자정 수정 항목 추가
+- SQLite 누적 DB 도입 커밋/푸시 및 README/CONTEXT_SUMMARY 반영
 - GitHub Pages 배포 확인
 - 장 마감 후(18시 이후) 실행 권장 문구 문서화

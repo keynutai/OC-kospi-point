@@ -6,5 +6,12 @@ __pycache__/
 venv/
 kospi_venv/
 
+# SQLite DB (로컬 누적 데이터, 환경별)
+*.db
+
+# 생성 결과물 (index.html은 GitHub Pages용으로 커밋)
+kospi_closing_prices.txt
+kospi_closing_prices.html
+
 # macOS
 .DS_Store

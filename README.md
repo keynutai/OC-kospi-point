@@ -27,8 +27,8 @@
 ## 📁 파일 구성 및 결과물 예시
 
 1. `run_kospi.command`: 더블클릭하여 프로그램을 바로 실행하는 macOS 전용 실행 파일
-2. `kospi_closing_prices.txt`: 깔끔하게 정렬된 콘솔용 텍스트 문서
-3. `kospi_closing_prices.html` / `index.html`: 모던 웹 스타일의 인터랙티브 리포트 (GitHub Pages용)
+2. `kospi_data.db`: 누적 저장용 SQLite 데이터베이스 (마지막 거래일 기준 일주일 전부터 증분 갱신)
+3. `index.html`: 모던 웹 스타일의 인터랙티브 리포트 (GitHub Pages용, DB 기반 생성)
 
 ---
 
@@ -58,11 +58,15 @@ pip install finance-datareader yfinance pandas
 ```bash
 python kospi_fetch.py
 ```
-*(실행 후 해당 폴더에 `kospi_closing_prices.txt`, `kospi_closing_prices.html`, `index.html`이 자동 생성/업데이트됩니다.)*
+*(실행 후 해당 폴더에 `kospi_data.db`(누적 DB)와 `index.html`(GitHub Pages용)이 생성/업데이트됩니다.)*
 
 ---
 
 ## 🔄 작업 내역 (Changelog)
+
+### 2026-11-26 (수) · SQLite 누적 DB + 증분 갱신 도입, txt/html 출력 제거
+
+매번 전체 기간을 다시 수집하던 비효율을 개선하기 위해 SQLite(`kospi_data.db`)에 마감가를 누적 저장하고, **DB 마지막 거래일 기준 일주일 전부터 오늘까지만** 새로 수집해 upsert하도록 변경했습니다. HTML(`index.html`)은 DB를 기반으로 생성합니다. 불필요한 `kospi_closing_prices.txt` / `kospi_closing_prices.html` 생성을 중단하고 파일을 삭제했습니다 (index.html로 충분).
 
 ### 2026-09-10 (목) · 데이터 소스 이중화 (FinanceDataReader + yfinance 비교 선택)
 

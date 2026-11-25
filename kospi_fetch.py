@@ -19,6 +19,7 @@ except Exception as e:
     print(f"⚠️ yfinance import failed: {e}")
 
 import pandas as pd
+import sqlite3
 from datetime import date, datetime, timedelta
 import os
 
@@ -27,10 +28,71 @@ TICKER           = "KS11"
 START_DATE       = "2026-01-01"
 END_DATE         = date.today().strftime("%Y-%m-%d")                          # 화면 표시/저장용 (오늘까지)
 END_DATE_YF      = (date.today() + timedelta(days=1)).strftime("%Y-%m-%d")    # yfinance는 end 미포함이라 +1일
-OUTPUT_FILE      = "kospi_closing_prices.txt"
-OUTPUT_FILE_HTML = "kospi_closing_prices.html"
+DB_FILE          = "kospi_data.db"             # 누적 저장용 SQLite 데이터베이스
 OUTPUT_FILE_INDEX= "index.html"                 # GitHub Pages 기본 인덱스 파일
 # ────────────────────────────────────────────────────────────
+
+
+# ──────────────────────────────────────────────────────────────
+#  SQLite 데이터베이스 (누적 저장)
+# ──────────────────────────────────────────────────────────────
+def init_db(db_path):
+    """데이터베이스/테이블을 생성합니다."""
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS kospi_daily ("
+            "date TEXT PRIMARY KEY, close REAL NOT NULL)"
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def load_db(db_path):
+    """DB에서 전체 데이터를 DataFrame으로 불러옵니다."""
+    if not os.path.exists(db_path):
+        return pd.DataFrame()
+    conn = sqlite3.connect(db_path)
+    try:
+        df = pd.read_sql(
+            "SELECT date, close FROM kospi_daily ORDER BY date",
+            conn, parse_dates=["date"],
+        )
+    finally:
+        conn.close()
+    if df.empty:
+        return pd.DataFrame()
+    df = df.rename(columns={"close": "Close"})
+    df = df.set_index("date")
+    df.index = pd.to_datetime(df.index)
+    df["Close"] = pd.to_numeric(df["Close"], errors="coerce")
+    return df
+
+
+def get_last_db_date(db_path):
+    """DB에 저장된 마지막 거래일(date)을 반환합니다. 없으면 None."""
+    df = load_db(db_path)
+    if df.empty:
+        return None
+    return df.index.max().date()
+
+
+def upsert_db(db_path, df):
+    """새로 수집한 데이터를 DB에 upsert(있으면 갱신, 없으면 삽입)합니다."""
+    init_db(db_path)
+    conn = sqlite3.connect(db_path)
+    try:
+        cur = conn.cursor()
+        for idx, row in df.iterrows():
+            cur.execute(
+                "INSERT INTO kospi_daily (date, close) VALUES (?, ?) "
+                "ON CONFLICT(date) DO UPDATE SET close = excluded.close",
+                (pd.Timestamp(idx).strftime("%Y-%m-%d"), float(row["Close"])),
+            )
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def fetch_kospi_data_fdr(ticker, start, end):
@@ -158,44 +220,7 @@ def fetch_and_compare_data(ticker, start, end):
 
 
 # ──────────────────────────────────────────────────────────────
-#  텍스트 저장
-# ──────────────────────────────────────────────────────────────
-def save_to_file(df, output_path):
-    """데이터프레임을 텍스트 파일로 저장합니다."""
-    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-    with open(output_path, "w", encoding="utf-8") as f:
-        f.write("=" * 50 + "\n")
-        f.write("  대한민국 코스피 지수 일별 마감가\n")
-        f.write(f"  수집 기간 : {START_DATE} ~ {END_DATE}\n")
-        f.write(f"  생성 일시 : {now_str}\n")
-        f.write(f"  데이터 건수: {len(df)}건\n")
-        f.write("=" * 50 + "\n\n")
-        f.write(f"{'날짜':<14}{'마감가 (KRW)':>15}{'등락(pt)':>10}{'등락(%)':>10}\n")
-        f.write("-" * 49 + "\n")
-
-        current_month = None
-        for idx, row in df.iterrows():
-            date_str  = idx.strftime("%Y-%m-%d") + f" ({['월', '화', '수', '목', '금', '토', '일'][idx.weekday()]})"
-            month_key = (idx.year, idx.month)
-            if month_key != current_month:
-                if current_month is not None:
-                    f.write("\n")
-                label = f"  {idx.year}년 {idx.month:02d}월  "
-                f.write(f"{'─' * 14}{label}{'─' * (28 - len(label))}\n")
-                current_month = month_key
-            close_val = float(row["Close"])
-            pct       = row["Pct_Change"]
-            point     = row["Point_Change"]
-            pct_str   = "-" if pct != pct else f"{pct:+.2f}%"
-            point_str = "-" if point != point else f"{point:+.2f}"
-            f.write(f"{date_str:<14}{close_val:>15,.2f}{point_str:>10}{pct_str:>10}\n")
-
-    print(f"✅ 저장 완료: {output_path}  ({len(df)}건)")
-
-
-# ──────────────────────────────────────────────────────────────
-#  HTML 저장
+#  HTML 저장 (DB 기반)
 # ──────────────────────────────────────────────────────────────
 def save_to_html(df, output_path, last_2025_date, last_2025):
     """데이터프레임을 스타일링된 HTML 파일로 저장합니다."""
@@ -712,25 +737,55 @@ def main():
 
     import pandas as pd
 
+    base = os.path.dirname(os.path.abspath(__file__))
+    db_path = os.path.join(base, DB_FILE)
+
     # 2025년 마지막 거래일 마감가 조회 (첫날 전일대비 계산용)
     print("📡 2025년 마지막 거래일 데이터 조회 중...")
     df_prev  = fetch_and_compare_data(TICKER, "2025-12-01", "2025-12-31")
     prev_col = df_prev["Close"]
     if isinstance(prev_col, pd.DataFrame):
         prev_col = prev_col.iloc[:, 0]
-    
+
     last_2025 = float(prev_col.iloc[-1])
     last_2025_raw = prev_col.index[-1].strftime("%Y-%m-%d")
     last_2025_date = last_2025_raw + f" ({['월', '화', '수', '목', '금', '토', '일'][prev_col.index[-1].weekday()]})"
     print(f"   └ 2025년 마지막 거래일: {last_2025_date}  종가: {last_2025:,.2f} pt")
 
-    # 본 데이터 수집 (2026-01-01 ~ 오늘)
-    df = fetch_and_compare_data(TICKER, START_DATE, END_DATE)
+    # DB에 저장된 마지막 날짜 확인 → 그 일주일 전부터 오늘까지만 새로 수집
+    last_db = get_last_db_date(db_path)
+    start_date_dt = datetime.strptime(START_DATE, "%Y-%m-%d").date()
+    if last_db is None:
+        fetch_start = START_DATE
+        print("🆕 DB 없음/비어있음 → 전체 기간 수집")
+    else:
+        fetch_start_dt = last_db - timedelta(days=7)
+        if fetch_start_dt < start_date_dt:
+            fetch_start_dt = start_date_dt
+        fetch_start = fetch_start_dt.strftime("%Y-%m-%d")
+        print(f"🔄 DB 마지막 거래일: {last_db} → {fetch_start} ~ {END_DATE} 구간만 갱신 수집")
 
-    close_col = df["Close"]
+    # 최근 구간 수집
+    df_recent = fetch_and_compare_data(TICKER, fetch_start, END_DATE)
+    close_col = df_recent["Close"]
     if isinstance(close_col, pd.DataFrame):
         close_col = close_col.iloc[:, 0]
-    df = close_col.to_frame(name="Close")
+    df_recent = close_col.to_frame(name="Close")
+    df_recent["Close"] = pd.to_numeric(df_recent["Close"], errors="coerce")
+    df_recent = df_recent.dropna(subset=["Close"])
+    df_recent = df_recent[df_recent["Close"] != 0]
+
+    # DB에 upsert
+    upsert_db(db_path, df_recent)
+    print(f"💾 DB 저장 완료: {db_path}  (신규/갱신 {len(df_recent)}건)")
+
+    # DB 전체 로드 (HTML 생성은 DB 기반)
+    df = load_db(db_path)
+    df["Close"] = pd.to_numeric(df["Close"], errors="coerce")
+    df = df.dropna(subset=["Close"])
+    df = df[df["Close"] != 0]
+    df = df[df.index >= pd.to_datetime(START_DATE)]
+    df = df.sort_index()
 
     # 2025년 마지막 거래일을 임시로 앞에 붙여 첫 행 전일대비 계산
     prev_row = pd.DataFrame(
@@ -741,7 +796,6 @@ def main():
     df["Pct_Change"] = df["Close"].pct_change() * 100
     df["Point_Change"] = df["Close"].diff()
     df = df.iloc[1:]
-    # 자정 placeholder 등으로 Close가 NaN/0인 행이 생기면 제거하되, 정상 등락 계산은 유지
     before = len(df)
     df = df.dropna(subset=["Close"])
     df = df[pd.to_numeric(df["Close"], errors="coerce").notna()]
@@ -749,14 +803,11 @@ def main():
     if len(df) != before:
         print(f"   ↳ 최종 NaN/0 행 {before - len(df)}건 제외 (자정 직후 미갱신 데이터)")
 
-    base = os.path.dirname(os.path.abspath(__file__))
+    df = df.sort_index()
 
-    # 텍스트 저장
-    save_to_file(df, os.path.join(base, OUTPUT_FILE))
-
-    # HTML 저장
-    save_to_html(df, os.path.join(base, OUTPUT_FILE_HTML), last_2025_date, last_2025)
-    save_to_html(df, os.path.join(base, OUTPUT_FILE_INDEX), last_2025_date, last_2025)
+    # HTML 저장 (DB 기반, index.html만 생성)
+    index_path = os.path.join(base, OUTPUT_FILE_INDEX)
+    save_to_html(df, index_path, last_2025_date, last_2025)
 
     # 통계 출력
     close_series = df["Close"]
